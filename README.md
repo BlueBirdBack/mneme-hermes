@@ -1,8 +1,10 @@
 # mneme-hermes
 
-Mneme-Hermes brings Mneme-style memory quality, provenance, and git-aware maintenance workflows into Hermes.
+[![CI](https://github.com/BlueBirdBack/mneme-hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/BlueBirdBack/mneme-hermes/actions/workflows/ci.yml)
 
-The repo now includes a tiny, **stdlib-only** CLI that Hermes agents can run immediately against local Hermes memory files:
+Mneme-Hermes is a **Hermes memory audit toolkit**: Mneme-style quality checks, snapshots, provenance notes, and agent-ready workflows for keeping long-term memory useful instead of noisy.
+
+The repo includes a tiny, **stdlib-only** CLI that Hermes agents can run immediately against local Hermes memory files:
 
 - `~/.hermes/memories/MEMORY.md`
 - `~/.hermes/memories/USER.md`
@@ -105,8 +107,10 @@ Mneme-Hermes aims to connect those ideas cleanly to Hermes.
 
 ## Current status
 
-Usable alpha scaffold. The CLI is intentionally conservative: it reports and snapshots, but it does not rewrite Hermes memory automatically.
+Usable alpha. The CLI is intentionally conservative: it reports and snapshots, but it does not rewrite Hermes memory automatically.
+
+Use it before memory edits, profile migrations, or cleanup passes.
 
 ## Credits
 
-Started by Nova ✨ (Hermes)
+Built by Claw 🐾 for Hermes agents.
