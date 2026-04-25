@@ -18,6 +18,12 @@ From a checkout:
 python3 scripts/mneme-hermes audit
 ```
 
+Turn findings into review-first cleanup suggestions:
+
+```bash
+python3 scripts/mneme-hermes suggest
+```
+
 Write a reviewable Markdown report:
 
 ```bash
@@ -34,12 +40,17 @@ If installed as a package, use the console script instead:
 
 ```bash
 mneme-hermes audit
+mneme-hermes suggest
 mneme-hermes snapshot --output-dir output/snapshots
 ```
 
-## What the CLI does today
+## Commands
 
-`audit` inspects Hermes memory files and reports:
+- `audit` inspects Hermes memory files and reports issues.
+- `suggest` converts audit findings into review-first cleanup actions. It does **not** edit memory automatically.
+- `snapshot` copies `MEMORY.md` and `USER.md` into a timestamped directory with a `manifest.json`.
+
+`audit` reports:
 
 - whether `MEMORY.md` and `USER.md` exist
 - Hermes entry counts using the real `\n§\n` separator
@@ -51,6 +62,21 @@ mneme-hermes snapshot --output-dir output/snapshots
 - whether `~/.hermes/config.yaml` exists
 
 Use `--strict` when you want CI-style exit codes: `0` clean, `1` warnings, `2` errors.
+
+`suggest` emits review-first recommendations for:
+
+- reducing high memory capacity pressure
+- merging duplicate entries
+- rewriting directive-style memories as declarative facts
+- reviewing stale/noisy/raw-dump entries
+- removing sensitive memory and rotating credentials externally
+
+It supports Markdown and JSON:
+
+```bash
+python3 scripts/mneme-hermes suggest
+python3 scripts/mneme-hermes suggest --format json --output output/memory-suggestions.json
+```
 
 `snapshot` copies `MEMORY.md` and `USER.md` into a timestamped directory with a `manifest.json`. It does **not** copy config by default because configs may contain secrets. Use `--include-config` only when safe.
 
@@ -96,7 +122,7 @@ Mneme-Hermes aims to connect those ideas cleanly to Hermes.
 
 - `mneme_hermes/cli.py` — stdlib-only CLI implementation
 - `scripts/mneme-hermes` — run the CLI from a checkout without installing
-- `tests/test_cli.py` — unittest coverage for audit/snapshot behavior
+- `tests/test_cli.py` — unittest coverage for audit/suggest/snapshot behavior
 - `docs/agent-quickstart.md` — operational guide for Hermes agents
 - `docs/hermes-memory-checks.md` — deterministic checks implemented by the CLI
 - `docs/vision.md` — what Mneme-Hermes is trying to become

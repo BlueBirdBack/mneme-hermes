@@ -63,6 +63,25 @@ Flags entries that may need manual review:
 - code/log dumps
 - very long or very short entries
 
+## Suggested actions
+
+The `suggest` command reuses the audit report and turns findings into review-first actions. It does not rewrite memory.
+
+Suggestions cover:
+
+- high capacity usage
+- duplicate groups
+- directive phrasing
+- stale/noisy/raw-dump entries
+- security-like findings with redacted snippets
+
+Use:
+
+```bash
+python3 scripts/mneme-hermes suggest --output output/memory-suggestions.md
+python3 scripts/mneme-hermes suggest --format json --output output/memory-suggestions.json
+```
+
 ## Exit behavior
 
 Default mode reports findings and exits `0` so agents can use it inside exploratory workflows.

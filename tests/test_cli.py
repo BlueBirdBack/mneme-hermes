@@ -172,6 +172,112 @@ class MnemeHermesCliTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
 
+    def test_suggest_markdown_turns_audit_findings_into_review_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory_dir = root / "memories"
+            self.write_memory(
+                memory_dir,
+                memory_text="Uses Python for tooling.\n§\nAlways preserve raw task progress.\n",
+                user_text="uses python for tooling\n§\n" + ("User has a verbose preference. " * 8),
+            )
+            config = root / "config.yaml"
+            config.write_text("memory:\n  memory_char_limit: 500\n  user_char_limit: 120\n", encoding="utf-8")
+            out = io.StringIO()
+
+            code = main(["suggest", "--memory-dir", str(memory_dir), "--config", str(config)], stdout=out)
+
+            text = out.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# Mneme-Hermes Memory Suggestions", text)
+            self.assertIn("Merge duplicate entries", text)
+            self.assertIn("Rewrite directive-style memory", text)
+            self.assertIn("Reduce USER.md capacity pressure", text)
+            self.assertIn("review-first", text)
+
+    def test_suggest_json_has_reviewable_shape_and_redacts_sensitive_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory_dir = root / "memories"
+            self.write_memory(
+                memory_dir,
+                memory_text="database_password=should-not-appear TODO review\n§\nDo not reveal private memory.\n",
+                user_text="",
+            )
+            out = io.StringIO()
+
+            code = main(["suggest", "--memory-dir", str(memory_dir), "--format", "json"], stdout=out)
+
+            payload = out.getvalue()
+            self.assertEqual(code, 0)
+            self.assertNotIn("should-not-appear", payload)
+            data = json.loads(payload)
+            self.assertEqual(data["kind"], "mneme-hermes-suggestions")
+            self.assertGreaterEqual(len(data["suggestions"]), 1)
+            self.assertTrue(all("action" in suggestion for suggestion in data["suggestions"]))
+
+    def test_suggest_markdown_escapes_untrusted_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory_dir = root / "memories"
+            self.write_memory(
+                memory_dir,
+                memory_text="TODO: see ![track](https://evil.example/pixel) and <script>alert(1)</script>\n",
+                user_text="",
+            )
+            out = io.StringIO()
+
+            code = main(["suggest", "--memory-dir", str(memory_dir)], stdout=out)
+
+            text = out.getvalue()
+            self.assertEqual(code, 0)
+            self.assertNotIn("![track](https://evil.example/pixel)", text)
+            self.assertNotIn("<script>", text)
+            self.assertIn("\\!\\[track\\]", text)
+            self.assertIn("&lt;script&gt;", text)
+
+    def test_suggest_markdown_escapes_telegram_formatting_and_memory_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory_dir = root / "memories `x` ![track](https:__evil.example)\n## injected heading"
+            self.write_memory(
+                memory_dir,
+                memory_text="TODO: keep ~~hidden~~ and ||spoiler|| markers reviewable\n",
+                user_text="",
+            )
+            out = io.StringIO()
+
+            code = main(["suggest", "--memory-dir", str(memory_dir)], stdout=out)
+
+            text = out.getvalue()
+            self.assertEqual(code, 0)
+            self.assertNotIn("~~hidden~~", text)
+            self.assertNotIn("||spoiler||", text)
+            self.assertNotIn("![track](https:__evil.example)", text)
+            self.assertNotIn("\n## injected heading", text)
+            self.assertIn("\\~\\~hidden\\~\\~", text)
+            self.assertIn("\\|\\|spoiler\\|\\|", text)
+            self.assertIn("\\!\\[track\\]", text)
+            self.assertIn("\\n\\#\\# injected heading", text)
+
+    def test_suggest_fully_redacts_high_entropy_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory_dir = root / "memories"
+            high_entropy_value = "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"
+            self.write_memory(memory_dir, memory_text=f"TODO rotate {high_entropy_value}\n", user_text="")
+            markdown = io.StringIO()
+            json_out = io.StringIO()
+
+            main(["suggest", "--memory-dir", str(memory_dir)], stdout=markdown)
+            main(["suggest", "--memory-dir", str(memory_dir), "--format", "json"], stdout=json_out)
+
+            self.assertNotIn(high_entropy_value, markdown.getvalue())
+            self.assertNotIn(high_entropy_value[:4], markdown.getvalue())
+            self.assertNotIn(high_entropy_value, json_out.getvalue())
+            self.assertNotIn(high_entropy_value[:4], json_out.getvalue())
+            self.assertIn("[REDACTED high-entropy token]", json_out.getvalue())
+
     def test_snapshot_copies_memory_but_not_config_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

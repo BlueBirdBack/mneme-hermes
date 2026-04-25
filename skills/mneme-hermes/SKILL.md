@@ -35,10 +35,17 @@ Save a Markdown report:
 python3 scripts/mneme-hermes audit --output output/memory-audit.md
 ```
 
+Turn audit findings into review-first cleanup suggestions:
+
+```bash
+python3 scripts/mneme-hermes suggest --output output/memory-suggestions.md
+```
+
 Use JSON for automation:
 
 ```bash
 python3 scripts/mneme-hermes audit --format json --output output/memory-audit.json
+python3 scripts/mneme-hermes suggest --format json --output output/memory-suggestions.json
 ```
 
 Create a backup before edits:
@@ -56,11 +63,12 @@ python3 scripts/mneme-hermes audit --home /path/to/.hermes
 ## Workflow
 
 1. Run `audit`.
-2. Read errors first, then warnings.
-3. Run `snapshot` before changing memory files.
-4. Edit memory manually through Hermes’ memory tool or direct file edits only when appropriate.
-5. Re-run `audit` and compare.
-6. Do not preserve secrets. Replace secrets with `[REDACTED]` and rotate credentials outside this tool.
+2. Run `suggest` for review-first cleanup actions.
+3. Read errors first, then warnings.
+4. Run `snapshot` before changing memory files.
+5. Edit memory manually through Hermes’ memory tool or direct file edits only when appropriate.
+6. Re-run `audit` and compare.
+7. Do not preserve secrets. Replace secrets with `[REDACTED]` and rotate credentials outside this tool.
 
 ## Boundaries
 

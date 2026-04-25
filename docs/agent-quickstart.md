@@ -47,6 +47,20 @@ python3 scripts/mneme-hermes audit \
 6. Remove possible secrets from memory and rotate exposed credentials outside this tool.
 7. Re-run `audit` after edits and compare the report.
 
+## Suggested workflow
+
+```bash
+python3 scripts/mneme-hermes audit --output output/memory-audit.md
+python3 scripts/mneme-hermes suggest --output output/memory-suggestions.md
+python3 scripts/mneme-hermes snapshot --output-dir output/snapshots
+```
+
+Apply only reviewed memory edits, then verify:
+
+```bash
+python3 scripts/mneme-hermes audit --strict
+```
+
 ## JSON and strict mode for automation
 
 ```bash

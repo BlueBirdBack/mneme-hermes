@@ -33,7 +33,7 @@ RELATIVE_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(api[_-]?key|token|secret|password|passwd|credential|authorization|bearer)\b\s*[:=]\s*\S+"
+    r"(?i)\b[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|token|secret|password|passwd|credential|authorization|bearer)[A-Za-z0-9_.-]*\b\s*[:=]\s*\S+"
 )
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 CRED_URL_RE = re.compile(r"https?://[^/\s:@]+:[^/\s:@]+@")
@@ -110,6 +110,15 @@ class MemoryEntry:
     text: str
     index: int
     start_line: int
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    priority: str
+    action: str
+    reason: str
+    details: tuple[str, ...] = ()
+    estimated_chars_saved: int | None = None
 
 
 def utc_now() -> str:
@@ -228,7 +237,7 @@ def redact_snippet(text: str) -> tuple[str, bool]:
     snippet = raw
     for token in TOKEN_RE.findall(snippet):
         if looks_high_entropy(token):
-            snippet = snippet.replace(token, token[:4] + "...[REDACTED]")
+            snippet = snippet.replace(token, "[REDACTED high-entropy token]")
             redacted = True
     if len(snippet) > 180:
         snippet = snippet[:177] + "..."
@@ -243,6 +252,30 @@ def looks_high_entropy(token: str) -> bool:
         return False
     entropy = -sum((token.count(c) / len(token)) * math.log2(token.count(c) / len(token)) for c in alphabet)
     return entropy >= 4.0
+
+
+def escape_markdown_text(text: str) -> str:
+    replacements = {
+        "\\": "\\\\",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "#": "\\#",
+        "-": "\\-",
+        "`": "\\`",
+        "*": "\\*",
+        "_": "\\_",
+        "[": "\\[",
+        "]": "\\]",
+        "(": "\\(",
+        ")": "\\)",
+        "!": "\\!",
+        "~": "\\~",
+        "|": "\\|",
+        "<": "&lt;",
+        ">": "&gt;",
+    }
+    return "".join(replacements.get(char, char) for char in text)
 
 
 def add_issue(
@@ -476,6 +509,125 @@ def report_to_json(report: AuditReport) -> str:
     return json.dumps(asdict(report), indent=2, sort_keys=True) + "\n"
 
 
+def build_suggestions(report: AuditReport) -> tuple[Suggestion, ...]:
+    suggestions: list[Suggestion] = []
+
+    for file_report in report.files:
+        for issue in file_report.issues:
+            if issue.check in {"capacity.over_limit", "capacity.high_usage", "capacity.near_limit"}:
+                if issue.check == "capacity.over_limit":
+                    priority = "high"
+                elif issue.check == "capacity.high_usage":
+                    priority = "medium"
+                else:
+                    priority = "low"
+                suggestions.append(
+                    Suggestion(
+                        priority=priority,
+                        action=f"Reduce {file_report.filename} capacity pressure",
+                        reason=issue.message,
+                        details=(
+                            f"Current usage: {file_report.char_usage}/{file_report.char_limit} chars ({file_report.char_usage_percent}%).",
+                            "Review long, overlapping, stale, or procedural entries first.",
+                            "Keep changes review-first; do not rewrite memory automatically.",
+                        ),
+                        estimated_chars_saved=max(0, file_report.char_usage - int(file_report.char_limit * 0.75)),
+                    )
+                )
+            elif issue.check == "phrasing.directive":
+                where = f"{issue.file} entry {issue.entry_index}" if issue.entry_index else issue.file
+                suggestions.append(
+                    Suggestion(
+                        priority="low",
+                        action="Rewrite directive-style memory",
+                        reason=f"{where} reads like an instruction; prefer a declarative durable fact.",
+                        details=(f"Snippet: {issue.snippet}",) if issue.snippet else (),
+                    )
+                )
+            elif issue.check in {"marker.review_word", "staleness.relative_time", "structure.raw_dump", "structure.long_entry"}:
+                where = f"{issue.file} entry {issue.entry_index}" if issue.entry_index else issue.file
+                suggestions.append(
+                    Suggestion(
+                        priority="medium" if issue.severity == "WARN" else "low",
+                        action="Review stale/noisy memory entry",
+                        reason=f"{where}: {issue.message}",
+                        details=(f"Snippet: {issue.snippet}",) if issue.snippet else (),
+                    )
+                )
+            elif issue.check.startswith("security."):
+                where = f"{issue.file} entry {issue.entry_index}" if issue.entry_index else issue.file
+                suggestions.append(
+                    Suggestion(
+                        priority="high",
+                        action="Remove sensitive memory and rotate externally",
+                        reason=f"{where}: {issue.message}",
+                        details=(f"Snippet: {issue.snippet}",) if issue.snippet else (),
+                    )
+                )
+
+    for duplicate in report.duplicates:
+        details = tuple(
+            f"{occurrence.file} entry {occurrence.entry_index}, line {occurrence.line}: {occurrence.snippet}"
+            for occurrence in duplicate.occurrences
+        )
+        saved = sum(len(occurrence.snippet) for occurrence in duplicate.occurrences[1:])
+        suggestions.append(
+            Suggestion(
+                priority="medium",
+                action="Merge duplicate entries",
+                reason="Multiple memory entries normalize to the same durable fact.",
+                details=details,
+                estimated_chars_saved=saved,
+            )
+        )
+
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    return tuple(sorted(suggestions, key=lambda item: (priority_order.get(item.priority, 99), item.action, item.reason)))
+
+
+def render_suggestions_markdown(report: AuditReport, suggestions: tuple[Suggestion, ...]) -> str:
+    lines = [
+        "# Mneme-Hermes Memory Suggestions",
+        "",
+        f"Generated: `{report.generated_at}`",
+        f"Memory dir: {escape_markdown_text(report.memory_dir)}",
+        "",
+        "These are review-first suggestions. Apply them manually, then re-run `mneme-hermes audit`.",
+        "",
+        "## Summary",
+        f"- Suggestions: {len(suggestions)}",
+        f"- Audit errors: {report.summary.get('ERROR', 0)}",
+        f"- Audit warnings: {report.summary.get('WARN', 0)}",
+        f"- Duplicate groups: {len(report.duplicates)}",
+        "",
+    ]
+    if not suggestions:
+        lines.extend(["No cleanup suggestions found.", ""])
+        return "\n".join(lines)
+
+    lines.append("## Suggested actions")
+    for index, suggestion in enumerate(suggestions, 1):
+        lines.append(f"{index}. **{suggestion.action}** ({suggestion.priority})")
+        lines.append(f"   - Reason: {escape_markdown_text(suggestion.reason)}")
+        if suggestion.estimated_chars_saved is not None:
+            lines.append(f"   - Estimated chars saved: {suggestion.estimated_chars_saved}")
+        for detail in suggestion.details:
+            lines.append(f"   - {escape_markdown_text(detail)}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def suggestions_to_json(report: AuditReport, suggestions: tuple[Suggestion, ...]) -> str:
+    payload = {
+        "kind": "mneme-hermes-suggestions",
+        "generated_at": report.generated_at,
+        "memory_dir": report.memory_dir,
+        "summary": report.summary,
+        "suggestions": [asdict(suggestion) for suggestion in suggestions],
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
 def write_or_print(text: str, output: Path | None, stdout: TextIO) -> None:
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -500,6 +652,15 @@ def audit_command(args: argparse.Namespace, stdout: TextIO) -> int:
     rendered = report_to_json(report) if args.format == "json" else render_markdown(report)
     write_or_print(rendered, args.output.expanduser() if args.output else None, stdout)
     return strict_exit_code(report) if args.strict else 0
+
+
+def suggest_command(args: argparse.Namespace, stdout: TextIO) -> int:
+    paths = resolve_paths(args.home, args.memory_dir, args.config)
+    report = build_audit(paths.memory_dir, paths.config_path, paths.home)
+    suggestions = build_suggestions(report)
+    rendered = suggestions_to_json(report, suggestions) if args.format == "json" else render_suggestions_markdown(report, suggestions)
+    write_or_print(rendered, args.output.expanduser() if args.output else None, stdout)
+    return 0
 
 
 def snapshot_command(args: argparse.Namespace, stdout: TextIO) -> int:
@@ -556,6 +717,12 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--output", type=Path, help="Write report to this path instead of stdout.")
     audit.add_argument("--strict", action="store_true", help="Return 1 for warnings and 2 for errors; default always exits 0 after reporting.")
     audit.set_defaults(func=audit_command)
+
+    suggest = subparsers.add_parser("suggest", help="Turn audit findings into review-first cleanup suggestions.")
+    add_common_path_args(suggest)
+    suggest.add_argument("--format", choices=("markdown", "json"), default="markdown", help="Suggestion format.")
+    suggest.add_argument("--output", type=Path, help="Write suggestions to this path instead of stdout.")
+    suggest.set_defaults(func=suggest_command)
 
     snapshot = subparsers.add_parser("snapshot", help="Copy Hermes memory files into a timestamped review backup.")
     add_common_path_args(snapshot)
