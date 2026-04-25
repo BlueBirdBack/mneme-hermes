@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mneme-hermes"
+version = "0.1.0"
+description = "Small stdlib-only helpers for Hermes memory hygiene."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "mneme-hermes contributors"}]
+dependencies = []
+
+[project.scripts]
+mneme-hermes = "mneme_hermes.cli:main"

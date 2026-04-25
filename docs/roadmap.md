@@ -1,9 +1,13 @@
 # Roadmap
 
-## Phase 0 — Scaffolding
+## Phase 0 — Usable local scaffold
 - create repo
 - define vision
 - define specs for first two tracks
+- add stdlib-only `mneme-hermes` CLI
+- add `audit` report for Hermes memory files
+- add `snapshot` backup command before manual edits
+- add unittest coverage and agent quickstart docs
 
 ## Phase 1 — Repo-aware wiki updater
 - define repo state file format
